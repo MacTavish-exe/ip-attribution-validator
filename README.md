@@ -21,19 +21,11 @@ Each line in your input file must be formatted like:
 
 <IP> DNS-<domain>
 
-css
-Copy
-Edit
-
 ### Example (`input.txt` or `input.csv`):
 
 3.109.254.159 DNS-masterdataapi.nseindia.com
 40.104.77.104 DNS-autodiscover.nseinvest.com
 3.7.140.26 DNS-elink.nse.co.in
-
-yaml
-Copy
-Edit
 
 ---
 
@@ -70,18 +62,13 @@ Labels each entry as:
 ❌ False Positive — IP does not match the domain
 
 2️⃣ Filter Only True Positives
-bash
-Copy
-Edit
+
 python3 filter_true_positives.py -i output.txt -o true_positives.txt
 This helper script takes the validator’s output and extracts only lines labeled True Positive.
 
 ⚡ One-Click Full Workflow (Automated)
 Use the provided run_validator.sh script to perform the full validation and filtering process:
 
-bash
-Copy
-Edit
 chmod +x run_validator.sh
 
 ./run_validator.sh -t input.txt
@@ -107,19 +94,14 @@ output.txt	Complete results (True + False Positives)
 true_positives.txt	Clean list of confirmed True Positives only
 
 💡 Example Output
-text
-Copy
-Edit
+
 IP              Domain                                  Result
 ====================================================================
 3.109.254.159   masterdataapi.nseindia.com             True Positive
 13.232.122.185  masterdataapi.nseindia.com             True Positive
 40.104.77.104   autodiscover.nseinvest.com             False Positive
-Filtered output in true_positives.txt:
 
-text
-Copy
-Edit
+Filtered output in true_positives.txt:
 3.109.254.159   masterdataapi.nseindia.com             True Positive
 13.232.122.185  masterdataapi.nseindia.com             True Positive
 🔧 Requirements
@@ -131,19 +113,13 @@ nslookup
 
 Install with:
 
-bash
-Copy
-Edit
 # Debian/Ubuntu/Kali
 sudo apt install dnsutils
 
 # macOS
 brew install bind
 📦 Installation
-Clone the repository:
 
-bash
-Copy
-Edit
+Clone the repository:
 git clone https://github.com/MacTavish-exe/ip-attribution-validator.git
 cd ip-attribution-validator
