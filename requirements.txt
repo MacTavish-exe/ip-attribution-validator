@@ -1,1 +1,1 @@
-requests
+# No extra packages needed; all standard library

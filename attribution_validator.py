@@ -1,10 +1,7 @@
 import argparse
 import csv
 import socket
-import ssl
 import subprocess
-import requests
-from config import SHODAN_API_KEY, CENSYS_API_ID, CENSYS_API_SECRET
 
 def run_dig(domain):
     try:
@@ -27,60 +24,27 @@ def run_nslookup(domain):
     except Exception:
         return []
 
-def check_ssl(ip):
-    try:
-        context = ssl.create_default_context()
-        with socket.create_connection((ip, 443), timeout=3) as sock:
-            with context.wrap_socket(sock, server_hostname=ip) as ssock:
-                cert = ssock.getpeercert()
-                return bool(cert)
-    except Exception:
-        return False
-
-def check_open_port(ip, port=443):
-    try:
-        with socket.create_connection((ip, port), timeout=3):
-            return True
-    except Exception:
-        return False
-
-def shodan_lookup(ip):
-    try:
-        url = f"https://api.shodan.io/shodan/host/{ip}?key={SHODAN_API_KEY}"
-        response = requests.get(url)
-        if response.status_code == 200:
-            return True
-        return False
-    except Exception:
-        return False
-
-def censys_lookup(ip):
-    try:
-        url = f"https://search.censys.io/api/v2/hosts/{ip}"
-        response = requests.get(url, auth=(CENSYS_API_ID, CENSYS_API_SECRET))
-        if response.status_code == 200:
-            return True
-        return False
-    except Exception:
-        return False
-
-def parse_input(file=None, csv_mode=False):
+def parse_txt(file):
     entries = []
     with open(file, "r") as f:
-        if csv_mode:
-            reader = csv.reader(f)
-            for row in reader:
-                if len(row) >= 2:
-                    entries.append((row[0].strip(), row[1].strip()))
-        else:
-            for line in f:
-                parts = line.strip().split()
-                if len(parts) == 2:
-                    entries.append((parts[0], parts[1]))
+        for line in f:
+            parts = line.strip().split()
+            if len(parts) == 2:
+                ip, attr = parts
+                if attr.startswith("DNS-"):
+                    entries.append((ip, attr))
     return entries
 
-def is_dns_based(attribution):
-    return attribution.startswith("DNS-")
+def parse_csv(file):
+    entries = []
+    with open(file, "r") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if len(row) >= 2:
+                ip, attr = row[0].strip(), row[1].strip()
+                if attr.startswith("DNS-"):
+                    entries.append((ip, attr))
+    return entries
 
 def validate_dns(ip, domain):
     dig_ips = run_dig(domain)
@@ -88,28 +52,41 @@ def validate_dns(ip, domain):
     all_ips = set(dig_ips + ns_ips)
     return ip in all_ips
 
-def validate_keyword(ip):
-    return check_open_port(ip) or check_ssl(ip) or shodan_lookup(ip) or censys_lookup(ip)
-
 def main():
-    parser = argparse.ArgumentParser(description="IP Attribution Validation Tool")
-    parser.add_argument("file", help="Input file path (TXT or CSV)")
-    parser.add_argument("-csv", action="store_true", help="Enable CSV mode")
+    parser = argparse.ArgumentParser(description="DNS Attribution Validator")
+    parser.add_argument("-t", help="Input text file")
+    parser.add_argument("-c", help="Input CSV file")
+    parser.add_argument("-o", help="Output file name")
     args = parser.parse_args()
 
-    entries = parse_input(args.file, csv_mode=args.csv)
+    if not args.t and not args.c:
+        print("Error: Please provide either -t <textfile> or -c <csvfile> as input.")
+        return
 
-    print(f"{'IP':<15}\t{'Attribution':<40}\t{'Result'}")
-    print("=" * 80)
+    entries = []
+    if args.t:
+        entries = parse_txt(args.t)
+    elif args.c:
+        entries = parse_csv(args.c)
+
+    results = []
+    header = f"{'IP':<15}\t{'Domain':<40}\t{'Result'}"
+    results.append(header)
+    results.append("=" * len(header))
+
     for ip, attr in entries:
-        if is_dns_based(attr):
-            domain = attr.replace("DNS-", "")
-            valid = validate_dns(ip, domain)
-            result = "True Positive (DNS)" if valid else "False Positive (DNS)"
-        else:
-            valid = validate_keyword(ip)
-            result = "True Positive (Keyword)" if valid else "False Positive (Keyword)"
-        print(f"{ip:<15}\t{attr:<40}\t{result}")
+        domain = attr.replace("DNS-", "")
+        valid = validate_dns(ip, domain)
+        result = "True Positive" if valid else "False Positive"
+        results.append(f"{ip:<15}\t{domain:<40}\t{result}")
+
+    for line in results:
+        print(line)
+
+    if args.o:
+        with open(args.o, "w") as f:
+            f.write("\n".join(results))
+        print(f"\nOutput written to {args.o}")
 
 if __name__ == "__main__":
     main()
