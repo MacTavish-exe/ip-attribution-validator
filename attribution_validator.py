@@ -1,7 +1,7 @@
 import argparse
 import csv
-import socket
 import subprocess
+import re
 
 def run_dig(domain):
     try:
@@ -24,69 +24,84 @@ def run_nslookup(domain):
     except Exception:
         return []
 
-def parse_txt(file):
+def parse_input(file, mode):
     entries = []
     with open(file, "r") as f:
-        for line in f:
-            parts = line.strip().split()
-            if len(parts) == 2:
-                ip, attr = parts
-                if attr.startswith("DNS-"):
-                    entries.append((ip, attr))
+        if mode == "csv":
+            reader = csv.reader(f)
+            for row in reader:
+                if len(row) >= 2:
+                    entries.append((row[0].strip(), row[1].strip()))
+        else:
+            for line in f:
+                parts = line.strip().split(None, 1)
+                if len(parts) == 2:
+                    entries.append((parts[0].strip(), parts[1].strip()))
     return entries
 
-def parse_csv(file):
-    entries = []
-    with open(file, "r") as f:
-        reader = csv.reader(f)
-        for row in reader:
-            if len(row) >= 2:
-                ip, attr = row[0].strip(), row[1].strip()
-                if attr.startswith("DNS-"):
-                    entries.append((ip, attr))
-    return entries
+def extract_domains(attribution_string):
+    # Split on commas, strip spaces
+    parts = [x.strip() for x in attribution_string.split(",")]
+    dns_domains = []
+    netblock_lines = []
 
-def validate_dns(ip, domain):
-    dig_ips = run_dig(domain)
-    ns_ips = run_nslookup(domain)
-    all_ips = set(dig_ips + ns_ips)
-    return ip in all_ips
+    for part in parts:
+        if re.search(r'Netblock|/\d{1,2}', part, re.IGNORECASE):
+            netblock_lines.append(part)
+        elif part.startswith("DNS-"):
+            dns_domains.append(part.replace("DNS-", "").strip())
+    return dns_domains, netblock_lines
+
+def validate_ip_against_domains(ip, domains):
+    for domain in domains:
+        dig_ips = run_dig(domain)
+        ns_ips = run_nslookup(domain)
+        all_ips = set(dig_ips + ns_ips)
+        if ip in all_ips:
+            return True
+    return False
 
 def main():
-    parser = argparse.ArgumentParser(description="DNS Attribution Validator")
+    parser = argparse.ArgumentParser(description="Advanced DNS Attribution Validator")
     parser.add_argument("-t", help="Input text file")
     parser.add_argument("-c", help="Input CSV file")
-    parser.add_argument("-o", help="Output file name")
+    parser.add_argument("-o", help="Output file name (default: output.txt)", default="output.txt")
     args = parser.parse_args()
 
     if not args.t and not args.c:
-        print("Error: Please provide either -t <textfile> or -c <csvfile> as input.")
+        print("Error: Please provide either -t <textfile> or -c <csvfile>")
         return
 
-    entries = []
-    if args.t:
-        entries = parse_txt(args.t)
-    elif args.c:
-        entries = parse_csv(args.c)
+    entries = parse_input(args.t, "txt") if args.t else parse_input(args.c, "csv")
 
     results = []
-    header = f"{'IP':<15}\t{'Domain':<40}\t{'Result'}"
+    netblock_entries = []
+
+    header = f"{'IP':<15}\t{'Domain(s)':<60}\t{'Result'}"
     results.append(header)
     results.append("=" * len(header))
 
     for ip, attr in entries:
-        domain = attr.replace("DNS-", "")
-        valid = validate_dns(ip, domain)
-        result = "True Positive" if valid else "False Positive"
-        results.append(f"{ip:<15}\t{domain:<40}\t{result}")
+        dns_domains, netblocks = extract_domains(attr)
+        if netblocks:
+            netblock_entries.append(f"{ip}\t{', '.join(netblocks)}")
+            continue  # skip DNS validation for netblocks
 
-    for line in results:
-        print(line)
+        if dns_domains:
+            valid = validate_ip_against_domains(ip, dns_domains)
+            result = "True Positive" if valid else "False Positive"
+            results.append(f"{ip:<15}\t{', '.join(dns_domains):<60}\t{result}")
 
-    if args.o:
-        with open(args.o, "w") as f:
-            f.write("\n".join(results))
-        print(f"\nOutput written to {args.o}")
+    # Save DNS attribution results
+    with open(args.o, "w") as f:
+        f.write("\n".join(results))
+    print(f"[+] DNS Validation results saved to: {args.o}")
+
+    # Save netblock entries separately
+    if netblock_entries:
+        with open("netblocks.txt", "w") as f:
+            f.write("\n".join(netblock_entries))
+        print(f"[+] Netblock attributions saved to: netblocks.txt")
 
 if __name__ == "__main__":
     main()
